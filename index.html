@@ -72,6 +72,13 @@ th{font-size:12px;color:var(--muted);font-weight:600;background:#fafbfc}
 .pd-comments{margin-top:8px;font-size:13px;color:#444}.pd-check{margin-top:10px;display:flex;gap:6px;align-items:center;font-size:13px;flex-wrap:wrap}
 .pd-empty{background:rgba(255,255,255,.55);border:2px dashed rgba(255,255,255,.8);color:#333;border-radius:0 0 16px 16px;padding:22px;text-align:center;font-weight:600}
 .pd-grid details{background:rgba(255,255,255,.85);border-radius:10px;padding:6px 10px;margin-top:8px}
+#printArea{display:none}
+@media print{body.printing>*:not(#printArea){display:none!important}body.printing #printArea{display:block}body.printing{background:#fff}
+ .rp-page{page-break-after:always;break-after:page;font-size:12.5pt;color:#000;padding:0 4mm}.rp-page:last-child{page-break-after:auto}}
+.rp-head h1{margin:2px 0 2px;font-size:22pt}.rp-task{color:#555;font-size:10.5pt}.rp-focus{color:#333;margin-bottom:10px}
+.rp-crit{border:1px solid #ccc;border-radius:6px;padding:8px 10px;margin:8px 0}.rp-crow{display:flex;justify-content:space-between;margin-bottom:4px}.rp-lv{font-weight:700;font-size:14pt}
+.rp-t{width:100%;border-collapse:collapse}.rp-t td{border-bottom:1px solid #e5e5e5;padding:4px 6px;vertical-align:top;font-size:11pt}.rp-band{color:#555;font-size:10pt}
+.rp-sec{margin-top:10px}.rp-com{white-space:pre-wrap;border:1px solid #ccc;border-radius:6px;padding:8px 10px;margin-top:4px;min-height:50px}
 .sec-ok{color:var(--okI)}.sec-warn{color:#b54708}.sec-bad{color:#b42318}
 </style>
 </head>
@@ -317,6 +324,7 @@ function viewStudents(v){const t=T();ensureRubric(t);if(!t.padlet){v.innerHTML='
    ${c.strands.map(s=>{const f=g.final?.[s.id];const b=bandOf(f);return`<div class="sp-strand"><div class="row" style="justify-content:space-between;flex-wrap:nowrap"><span class="small"><b>${esc(s.code)}</b> ${esc(s.name)}</span>${lvSel(`data-pfin="${s.id}"`,f,'–')}</div>
     <details class="small"><summary class="muted">${b?`Band ${b}: ${esc((s.bands?.[b]||'(no description)').slice(0,70))}`:'Band descriptions'}</summary>${BANDS.slice().reverse().map(x=>`<div style="margin:3px 0;${x===b?'font-weight:600':''}">${x}: ${esc(s.bands?.[x]||'—')}</div>`).join('')}</details></div>`}).join('')}</div>`}).join('')}
   <label class="f">Comment to student</label><textarea id="pcom" rows="7" placeholder="Strengths and next steps">${esc(g.comment||'')}</textarea>
+  <div class="row" style="margin-top:6px"><button class="btn s" id="pcopy">Copy comment</button><button class="btn s" id="pprint">Print report</button></div>
   <label class="row small" style="margin-top:8px"><input type="checkbox" id="pdone" ${g.done?'checked':''}> Done grading this student</label>
   <div class="row" style="margin-top:10px"><button class="btn" id="pprev">← Previous</button><button class="btn p" id="pnext">Next student →</button></div></aside>`;
  const done=m.students.filter(s=>t.ai.grades[s.id]?.done).length;
@@ -332,9 +340,60 @@ function viewStudents(v){const t=T();ensureRubric(t);if(!t.padlet){v.innerHTML='
  let ct=null;v.querySelector('#pcom').addEventListener('input',e=>{G().comment=e.target.value;clearTimeout(ct);ct=setTimeout(save,400)});
  v.querySelector('#pdone').onchange=e=>{G().done=e.target.checked;save();const o=v.querySelector(`#stuSel option[value="${CSS.escape(st.id)}"]`);if(o)o.textContent=(e.target.checked?'✓ ':'')+st.name};
  v.querySelectorAll('[data-img]').forEach(b=>b.onclick=()=>{const[k,val]=b.dataset.img.split('|');t.imgOk=t.imgOk||{};if(val==='')delete t.imgOk[k];else t.imgOk[k]=val==='1';save();const y=window.scrollY;viewStudents(v);window.scrollTo(0,y)});
- v.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openCell(st.id,b.dataset.edit))}
+ v.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openCell(st.id,b.dataset.edit));
+ v.querySelector('#pcopy').onclick=e=>copyText(G().comment||'',e.target);
+ v.querySelector('#pprint').onclick=()=>{const rr=resultRows(t).rows.filter(x=>x.st.id===st.id);printReports(t,rr)}}
 document.addEventListener('keydown',e=>{if(tab!=='students'||/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName||'')||document.getElementById('drawer').classList.contains('open'))return;
  if(e.key==='ArrowRight'){const b=document.getElementById('tnext');if(b)b.click()}if(e.key==='ArrowLeft'){const b=document.getElementById('tprev');if(b)b.click()}});
+</script>
+<script>'use strict';
+// ================= Results: review, copy for ManageBac, export, print reports =================
+let resSort=null;
+function copyText(txt,btn){const done=()=>{if(btn){const o=btn.textContent;btn.textContent='Copied ✓';setTimeout(()=>btn.textContent=o,1200)}};
+ const fb=()=>{const ta=document.createElement('textarea');ta.value=txt;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();try{document.execCommand('copy')}catch(e){}ta.remove();done()};
+ try{navigator.clipboard.writeText(txt).then(done,fb)}catch(e){fb()}}
+function resultRows(t){const m=buildModel(t);const ros=roster(t);const r=t.rubric.criteria;const strands=r.flatMap(c=>c.strands);
+ const rows=m.students.map(st=>{const d=ros?.find(x=>x.id===st.id);const g=t.ai.grades[st.id]||{};return{st,given:d?.given||st.given||st.name,family:d?.family||'',g,strandLv:strands.map(s=>g.final?.[s.id]??null),crit:r.map(c=>critLevel(c,g)),comment:g.comment||'',done:!!g.done}});
+ const by=resSort||LS.get('rb_ressort','tracker');
+ if(by==='family')rows.sort((a,b)=>(a.family||a.given).localeCompare(b.family||b.given)||a.given.localeCompare(b.given));
+ else if(by==='given')rows.sort((a,b)=>a.given.localeCompare(b.given));
+ return{m,rows,strands,crits:r}}
+function viewResults(v){const t=T();ensureRubric(t);if(!t.padlet){v.innerHTML='<div class="infobox">Import the Padlet export in tab 2 first.</div>';return}
+ const{rows,strands,crits}=resultRows(t);const by=resSort||LS.get('rb_ressort','tracker');
+ const nDone=rows.filter(x=>x.done).length,nComplete=rows.filter(x=>x.crit.every(l=>l!=null)&&x.comment.trim()).length;
+ v.innerHTML=`<div class="row" style="justify-content:space-between;margin-bottom:10px"><div><b>${esc(t.name)}</b> <span class="muted">· ${rows.length} students · ${nDone} marked done · ${nComplete} with all finals + comment</span></div>
+ <div class="row"><span class="small muted">Order:</span><select id="rsort" style="width:auto">${[['tracker','As in tracker'],['family','Family name'],['given','Given name']].map(([k,l])=>`<option value="${k}" ${by===k?'selected':''}>${l}</option>`).join('')}</select></div></div>
+ <div class="card"><div class="row"><b class="small">Copy for ManageBac</b><span class="small muted">Paste straight into a gradebook column or a comment box. Copies follow the order chosen above.</span></div>
+ <div class="row" style="margin-top:8px">${crits.map((c,i)=>`<button class="btn s" data-ccol="${i}">Copy Final ${esc(c.code)} column</button>`).join('')}<button class="btn s" id="cAll">Copy whole table (for Excel)</button></div></div>
+ <div class="card"><div class="row"><b class="small">Export</b></div><div class="row" style="margin-top:8px">
+ <button class="btn p" id="pAll">Print / Save PDF: all reports</button><button class="btn" id="pDone">Print / Save PDF: only students marked done</button><button class="btn" id="xCsv">Download CSV</button><button class="btn" id="xXls">Download Excel (tracker + grades)</button></div>
+ <div class="small muted" style="margin-top:6px">PDF: the print window opens; choose <b>Save as PDF</b>. Each student starts on a new page.</div></div>
+ <div class="trk"><table><tr><th class="name">Student</th>${strands.map(s=>`<th>${esc(s.code)}</th>`).join('')}${crits.map(c=>`<th>Final ${esc(c.code)} /8</th>`).join('')}<th>Comment</th><th>Done</th><th></th></tr>
+ ${rows.map((x,ri)=>`<tr${!x.done?' style="background:#fffdf5"':''}><td class="name"><a href="#" data-sp="${esc(x.st.id)}"><b>${esc(x.st.name)}</b></a></td>
+  ${x.strandLv.map(l=>`<td>${l??'<span class="flag">–</span>'}</td>`).join('')}${x.crit.map(l=>`<td><b>${l??'<span class="flag">–</span>'}</b></td>`).join('')}
+  <td class="small" style="max-width:420px;white-space:pre-wrap">${x.comment?esc(x.comment):'<span class="flag">No comment yet</span>'}</td><td>${x.done?'✓':''}</td>
+  <td><div class="row" style="flex-direction:column;align-items:stretch;gap:4px"><button class="btn s" data-cc="${ri}">Copy comment</button><button class="btn s" data-pr="${ri}">Print report</button></div></td></tr>`).join('')}</table></div>`;
+ v.querySelector('#rsort').onchange=e=>{resSort=e.target.value;LS.set('rb_ressort',resSort);viewResults(v)};
+ v.querySelectorAll('[data-ccol]').forEach(b=>b.onclick=()=>copyText(rows.map(x=>x.crit[+b.dataset.ccol]??'').join('\n'),b));
+ v.querySelector('#cAll').onclick=e=>{const head=['Student',...strands.map(s=>s.code),...crits.map(c=>'Final '+c.code),'Comment'];copyText([head,...rows.map(x=>[x.st.name,...x.strandLv.map(l=>l??''),...x.crit.map(l=>l??''),x.comment.replace(/\s*\n\s*/g,' ')])].map(r=>r.join('\t')).join('\n'),e.target)};
+ v.querySelectorAll('[data-cc]').forEach(b=>b.onclick=()=>copyText(rows[+b.dataset.cc].comment,b));
+ v.querySelectorAll('[data-pr]').forEach(b=>b.onclick=()=>printReports(t,[rows[+b.dataset.pr]]));
+ v.querySelectorAll('[data-sp]').forEach(a=>a.onclick=e=>{e.preventDefault();curStu=a.dataset.sp;LS.set('rb_stu',curStu);tab='students';LS.set('rb_tab',tab);render();window.scrollTo(0,0)});
+ v.querySelector('#pAll').onclick=()=>printReports(t,rows);v.querySelector('#pDone').onclick=()=>{const d=rows.filter(x=>x.done);if(!d.length){alert('No students are marked done yet.');return}printReports(t,d)};
+ v.querySelector('#xCsv').onclick=()=>{const head=['Student','Given name','Family name','Research focus',...strands.map(s=>s.code),...crits.map(c=>'Final '+c.code),'Comment','Done','Submitted','On time','Late','Missing'];
+  const q=x=>{const s=String(x??'');return/[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s};
+  const csv=[head,...rows.map(x=>[x.st.name,x.given,x.family,x.st.focus||'',...x.strandLv,...x.crit,x.comment,x.done?'Yes':'',x.st.sum.sub,x.st.sum.ontime,x.st.sum.late,x.st.sum.miss])].map(r=>r.map(q).join(',')).join('\r\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['﻿'+csv],{type:'text/csv'}));a.download=`${t.name.replace(/[^\w\- ]+/g,'').trim()||'Research'} - results.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000)};
+ v.querySelector('#xXls').onclick=()=>{const m=buildModel(t);exportXlsx(t,m)}}
+function reportHtml(t,x){const st=x.st,g=x.g;const crits=t.rubric.criteria;
+ return`<div class="rp-page"><div class="rp-head"><div><div class="rp-task">${esc(t.name)}${t.grade?' · '+esc(t.grade):''}${t.cls?' · '+esc(t.cls):''}</div><h1>${esc(st.name)}</h1><div class="rp-focus">${esc(t.topic||'')}${st.focus?' — '+esc(st.focus):''}</div></div></div>
+ ${crits.map(c=>{const l=critLevel(c,g);return`<div class="rp-crit"><div class="rp-crow"><b>Criterion ${esc(c.code)}: ${esc(c.name)}</b><span class="rp-lv">${l??'–'} / 8</span></div>
+  <table class="rp-t">${c.strands.map(s=>{const f=g.final?.[s.id];const b=bandOf(f);return`<tr><td style="width:60px"><b>${esc(s.code)}</b></td><td>${esc(s.name)}${b&&s.bands?.[b]?`<div class="rp-band">${b}: ${esc(s.bands[b])}</div>`:''}</td><td style="width:50px;text-align:right"><b>${f??'–'}</b></td></tr>`}).join('')}</table></div>`}).join('')}
+ <div class="rp-sec"><b>Teacher comment</b><div class="rp-com">${g.comment?esc(g.comment):'—'}</div></div>
+ <div class="rp-sec"><b>Research submissions</b><table class="rp-t">${t.slots.map(sl=>{const c=st.slots[sl.id];return`<tr><td style="width:60px">${esc(sl.label)}</td><td>${esc(sl.type)}${c.primary?`<div class="rp-band">${esc(c.primary.subject||'')}</div>`:''}</td><td style="width:150px;text-align:right">${esc(c.status.text)}</td></tr>`}).join('')}</table>
+ <div class="rp-band" style="margin-top:4px">${esc(st.consistency)}</div></div></div>`}
+function printReports(t,rows){let el=document.getElementById('printArea');if(!el){el=document.createElement('div');el.id='printArea';document.body.appendChild(el)}
+ el.innerHTML=rows.map(x=>reportHtml(t,x)).join('');document.body.classList.add('printing');const end=()=>{document.body.classList.remove('printing');window.removeEventListener('afterprint',end)};window.addEventListener('afterprint',end);setTimeout(()=>{window.print();setTimeout(end,1500)},50)}
 </script>
 <script>
 'use strict';
@@ -514,12 +573,12 @@ function consistency(st,t){const s=st.sum,due=s.N-s.nd;if(!due)return'Nothing du
  return`${w} (${bits.join('; ')})`}
 
 // ================= Tabs =================
-const TABS=[['task','1 · Task setup'],['padlet','2 · Padlet & students'],['tracker','3 · Tracker'],['students','4 · Student pages'],['rubric','5 · Rubric']];
+const TABS=[['task','1 · Task setup'],['padlet','2 · Padlet & students'],['tracker','3 · Tracker'],['students','4 · Student pages'],['rubric','5 · Rubric'],['results','6 · Results']];
 function renderTabs(){document.getElementById('tabs').innerHTML=TABS.map(([k,l])=>`<button data-t="${k}" class="${tab===k?'on':''}" >${l}</button>`).join('');
  document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{tab=b.dataset.t;LS.set('rb_tab',tab);render()})}
 function renderHeader(){const s=document.getElementById('taskSel');s.innerHTML=tasks.map(t=>`<option value="${t.id}" ${t.id===curId?'selected':''}>${esc(t.name)}</option>`).join('')}
 function healTz(t){const P=t?.padlet;if(!P||(t.tzMode&&t.tzMode!=='auto'))return false;if(nightShare(P)>0.5){P.tzDetected=(P.tzApplied||'utc')==='local'?'utc':'local';applyTz(t);return true}return false}
-function render(){try{if(healTz(T()))save()}catch(e){console.error(e)}renderHeader();renderTabs();closeDrawer();const v=document.getElementById('view');({task:viewTask,padlet:viewPadlet,tracker:viewTracker,students:viewStudents,rubric:viewRubric}[tab]||viewTask)(v)}
+function render(){try{if(healTz(T()))save()}catch(e){console.error(e)}renderHeader();renderTabs();closeDrawer();const v=document.getElementById('view');({task:viewTask,padlet:viewPadlet,tracker:viewTracker,students:viewStudents,rubric:viewRubric,results:viewResults}[tab]||viewTask)(v)}
 
 // ---------- Tab 1: Task ----------
 let showAdv=false;
